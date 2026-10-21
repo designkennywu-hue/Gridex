@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import { createAppServer, getLibrary, readNote, safePath } from './server.mjs';
+import { isAgentWork } from './library-sources.mjs';
 
 async function fixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'second-brain-test-'));
@@ -35,6 +36,24 @@ test('Reads actual metadata and groups recording sidecars into one inbox item', 
   assert.match(recording.body, /A machine summary/);
   await fs.writeFile(path.join(root, 'documents', 'new.md'), '# Newly added\nFresh content');
   assert.equal((await getLibrary(root)).notes.length, 3);
+});
+
+test('Agent work discovers both capture types without absorbing cited providers or raw sources', async t => {
+  const root = await fixture(t);
+  for (const [folder,kind,source] of [['insights','agent-insight','agent-conversation'],['code','code-evidence','code']]) {
+    await fs.mkdir(path.join(root,'documents/agent-work',folder),{recursive:true});
+    await fs.writeFile(path.join(root,'documents/agent-work',folder,'sample.md'),`---\ntitle: ${kind}\ncontent_type: ${kind}\nsource_kind: ${source}\nlabels: ["project:field-app"]\nreview_status: needs-review\nsources: ["https://linear.app/example"]\n---\n# ${kind}\n\nEvidence with scoped provenance.\n`);
+  }
+  const library = await getLibrary(root);
+  const captures = library.notes.filter(isAgentWork);
+  assert.deepEqual(captures.map(n=>n.kind).sort(),['agent-insight','code-evidence']);
+  assert.ok(captures.every(n=>n.review==='needs-review'&&n.labels.includes('project:field-app')));
+  assert.equal(isAgentWork({id:'sources/capture/documents/agent-work/code/sample.md',category:'sources'}),false);
+  assert.equal(isAgentWork({id:'documents/agent-work-other/sample.md',category:'notes'}),false);
+  assert.equal(isAgentWork({id:'documents/design-system/existing.md',category:'notes',kind:'code-evidence'}),true);
+  assert.equal(isAgentWork({id:'sources/capture/existing.md',category:'sources',kind:'code-evidence'}),false);
+  assert.equal(library.notes.filter(n=>n.category==='notes').length,3);
+  assert.equal(library.warnings.length,0);
 });
 
 test('Restricts reads to knowledge files, including resolved symlink targets', async t => {
@@ -197,4 +216,77 @@ process.on('SIGTERM',()=>process.exit(0));
   assert.equal((await fetch(base+'/api/recordings',{method:'PATCH',headers:projectHeaders,body:JSON.stringify({id:result.noteId,project:null})})).status,200);
   assert.deepEqual((await getLibrary(root)).notes.find(n=>n.id===result.noteId).labels,[]);
   assert.equal((await action('stop',{title:''})).status,409);
+});
+
+test('Summaries generate recording titles while preserving manual names and concurrent edits', async t => {
+  const {default:createRecorder}=await import('./recorder/engine.cjs');
+  const {mutateRecording,renameRecording}=await import('./recordings.mjs');
+  const root=await fixture(t);
+  const records={auto:{title:'Recording Oct 20, 2026 5:04 PM',project:'field-app'},manual:{title:'My planning session',titleSource:'manual'},race:{title:'Recording Oct 20, 2026 5:04 PM',titleSource:'default'},invalid:{title:'Recording Oct 20, 2026 5:04 PM',titleSource:'default'}};
+  for(const id of Object.keys(records)){
+    const dir=path.join(root,'inbox',id);await fs.mkdir(dir);
+    await fs.writeFile(path.join(dir,'audio.mp3'),Buffer.from([1,2,3]));
+    await fs.writeFile(path.join(dir,'transcript.json'),JSON.stringify({text:'We agreed to simplify the device setup flow.'}));
+  }
+  await fs.writeFile(path.join(root,'inbox/.metadata.json'),JSON.stringify(records));
+  let requests=0,release;
+  const model=http.createServer(async(req,res)=>{
+    res.setHeader('Content-Type','application/json');
+    if(req.url==='/api/tags'){res.end(JSON.stringify({models:[{name:'llama3.1:8b'}]}));return;}
+    let body='';for await(const part of req)body+=part;
+    const request=JSON.parse(body);assert.equal(request.format.type,'object');
+    requests++;await new Promise(resolve=>{release=resolve;});
+    res.end(JSON.stringify({message:{content:requests===4?'invalid JSON':JSON.stringify({title:'Simplifying device setup',summary:'The team agreed to simplify device setup.'})}}));
+  });
+  await new Promise(resolve=>model.listen(0,'127.0.0.1',resolve));
+  t.after(()=>new Promise(resolve=>model.close(resolve)));
+  const previous=process.env.OLLAMA_URL;process.env.OLLAMA_URL='http://127.0.0.1:'+model.address().port;
+  const engine=createRecorder({recordingsDir:path.join(root,'inbox'),withMutation:op=>mutateRecording(root,op)});
+  if(previous===undefined)delete process.env.OLLAMA_URL;else process.env.OLLAMA_URL=previous;
+  const wait=async predicate=>{for(let i=0;i<200;i++){if(await predicate())return;await new Promise(r=>setTimeout(r,10));}throw new Error('Timed out waiting for summary');};
+  for(const [i,id] of ['auto','manual','race','invalid'].entries()){
+    await engine.summarize(id);await wait(()=>requests===i+1);
+    if(id==='race')await mutateRecording(root,()=>renameRecording(root,'inbox/race/audio.mp3','My own title'));
+    release();await wait(()=>!engine.busy(id));
+  }
+  const metadata=JSON.parse(await fs.readFile(path.join(root,'inbox/.metadata.json'),'utf8'));
+  assert.equal(metadata.auto.title,'Simplifying device setup');
+  assert.equal(metadata.auto.titleSource,'generated');
+  assert.equal(metadata.auto.project,'field-app');
+  assert.equal(metadata.manual.title,'My planning session');
+  assert.equal(metadata.race.title,'My own title');
+  assert.equal(metadata.race.titleSource,'manual');
+  assert.equal(metadata.invalid.title,records.invalid.title);
+  assert.equal((await engine.list()).find(x=>x.id==='invalid').summary.state,'error');
+  assert.match(await fs.readFile(path.join(root,'inbox/auto/summary.md'),'utf8'),/# Simplifying device setup/);
+  assert.match(await fs.readFile(path.join(root,'inbox/race/summary.md'),'utf8'),/# My own title/);
+  assert.deepEqual([...await fs.readFile(path.join(root,'inbox/auto/audio.mp3'))],[1,2,3]);
+});
+
+test('Project overviews retain evidence dates and planned phases without adding gallery items', async t => {
+  const root=await fixture(t);
+  await fs.mkdir(path.join(root,'topics'));
+  const config={version:1,projects:{'field-app':{
+    phase:'Schema definition',asOf:'2026-01-01',sources:['documents/sample.md'],note:'Delivery is unconfirmed.',
+    steps:[{label:'Requirements recorded',date:'2026-01-01',state:'current',sources:['documents/sample.md']},{label:'Planned launch',date:'2026-01-02',state:'planned',sources:['documents/sample.md']}],
+    nextAction:{text:'Confirm the schema.',kind:'suggested',owner:null,due:null,sources:['documents/sample.md']},
+  },unrelated:{phase:'Shipped',asOf:'2026-01-01',sources:['documents/sample.md']}}};
+  const file=path.join(root,'topics/project-progress.json');
+  await fs.writeFile(file,JSON.stringify(config));
+  let library=await getLibrary(root);
+  assert.equal(library.notes.length,2);
+  assert.equal(library.projectOverviews['field-app'].phase,'Schema definition');
+  assert.equal(library.projectOverviews['field-app'].steps[1].state,'planned','Elapsed dates never imply completed milestones');
+  assert.equal(library.projectOverviews['field-app'].nextAction.owner,null);
+  assert.equal(library.projectOverviews['field-app'].nextAction.kind,'suggested');
+  assert.equal(library.projectOverviews['field-app'].newerNotes,true);
+  assert.equal(library.projectOverviews.unrelated,undefined,'Evidence must belong to the project');
+  config.projects['field-app'].sources=['../outside.md','https://example.com/unfetched'];
+  await fs.writeFile(file,JSON.stringify(config));
+  assert.deepEqual((await getLibrary(root)).projectOverviews,{});
+  await fs.writeFile(file,'invalid JSON');
+  library=await getLibrary(root);
+  assert.equal(library.notes.length,2);
+  assert.equal(library.warnings.length,1);
+  assert.deepEqual(library.projectOverviews,{});
 });

@@ -33,7 +33,7 @@ await build({
 writeFileSync(path.join(here, 'dist/index.html'), `<!doctype html>
 <html lang="en" data-theme="light" data-viewport="desktop"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light dark"><title>Index · Kenny</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='12' fill='%2325272b'/%3E%3Ctext x='20' y='27' text-anchor='middle' fill='white' font-family='sans-serif' font-size='23'%3EB%3C/text%3E%3C/svg%3E">
+<meta name="color-scheme" content="light dark"><title>Gridex · Kenny</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='12' fill='%2325272b'/%3E%3Ctext x='20' y='27' text-anchor='middle' fill='white' font-family='sans-serif' font-size='23'%3EG%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="/app.css"></head><body><div id="root"></div><script type="module" src="/app.js"></script></body></html>`);
 console.log('Built with the current shared-ui-components source, as requested.');

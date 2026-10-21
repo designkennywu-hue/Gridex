@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import createRecorder from './recorder/engine.cjs';
 import { readProjects, updateProjects } from './projects.mjs';
+import { buildProjectOverviews } from './project-progress.mjs';
 import { mutateRecording, renameRecording, deleteRecording, restoreRecording, assignRecording } from './recordings.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -109,7 +110,12 @@ export async function getLibrary(root) {
     try { notes.push(await readNote(root, relative)); } catch (e) { warnings.push({ file: relative, error: e.message }); }
   }
   notes.sort((a, b) => b.updated.localeCompare(a.updated) || a.title.localeCompare(b.title));
-  return { notes, warnings, refreshedAt: new Date().toISOString() };
+  let projectOverviews = {};
+  try {
+    const file = await safePath(root, 'topics/project-progress.json');
+    projectOverviews = buildProjectOverviews(JSON.parse(await fs.readFile(file.resolved, 'utf8')), notes);
+  } catch (error) { if(error.code !== 'ENOENT') warnings.push({file:'topics/project-progress.json',error:'Project progress could not be read'}); }
+  return { notes, warnings, projectOverviews, refreshedAt: new Date().toISOString() };
 }
 
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.md': 'text/plain; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.mp3': 'audio/mpeg', '.ttf': 'font/ttf', '.woff2': 'font/woff2' };
@@ -129,7 +135,7 @@ export function createAppServer(root = defaultRoot, dist = path.join(here, 'dist
         if (req.method === 'GET' && action === 'status') return json(200, recorder.status(Math.max(0, Number(url.searchParams.get('since')) || 0)));
         if (req.method === 'GET' && action === 'recordings') return json(200, await recorder.list());
         if (req.method !== 'POST' || !['start','pause','resume','stop','transcribe','summarize'].includes(action)) return json(405,{error:'Unsupported recording action.'});
-        if (req.headers.origin !== `http://${req.headers.host}` || req.headers['x-second-brain'] !== 'capture' || !req.headers['content-type']?.startsWith('application/json')) return json(403,{error:'Recording controls must come from Index.'});
+        if (req.headers.origin !== `http://${req.headers.host}` || req.headers['x-second-brain'] !== 'capture' || !req.headers['content-type']?.startsWith('application/json')) return json(403,{error:'Recording controls must come from Gridex.'});
         let body = '';
         for await (const chunk of req) { body += chunk; if (Buffer.byteLength(body) > 16384) return json(413,{error:'Request too large.'}); }
         let input; try { input = JSON.parse(body); } catch { return json(400,{error:'Invalid request.'}); }
@@ -222,5 +228,5 @@ export function createAppServer(root = defaultRoot, dist = path.join(here, 'dist
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const server = createAppServer();
   const port = Number(process.env.PORT || 4180);
-  server.listen(port, '127.0.0.1', () => console.log(`Index: http://127.0.0.1:${port}`));
+  server.listen(port, '127.0.0.1', () => console.log(`Gridex: http://127.0.0.1:${port}`));
 }

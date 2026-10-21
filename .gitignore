@@ -5,8 +5,14 @@
 !/AGENTS.md
 !/agent.md
 !/Open Index.command
+!/Open Gridex.command
 !/templates/
 !/interface/
+!/integrations/
+/integrations/*
+!/integrations/agent-work/
+/integrations/agent-work/*
+!/integrations/agent-work/README.md
 .DS_Store
 .env
 .env.*

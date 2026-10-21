@@ -56,9 +56,9 @@ export async function renameRecording(root, id, title) {
   await safePath(root, id);
   const state = await metadata(root);
   const key = id.split('/')[1];
-  state.data[key] = { ...state.data[key], title: title.trim() };
+  state.data[key] = { ...state.data[key], title: title.trim(), titleSource: 'manual' };
   await saveMetadata(state);
-  return { id, title: title.trim() };
+  return { id, title: title.trim(), titleSource: 'manual' };
 }
 
 export async function deleteRecording(root, id) {

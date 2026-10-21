@@ -1,10 +1,10 @@
-# Index
+# Gridex
 
 A local personal knowledge browser with a built-in macOS recorder. Browse project notes, imported documents and small Slack insights; record system audio and microphone together, then transcribe and summarize locally.
 
 ## Start
 
-Requires Node.js 22 or newer and access to the shared UI component source. Index consumes that source without vendoring it.
+Requires Node.js 22 or newer and access to the shared UI component source. Gridex consumes that source without vendoring it.
 
 ```sh
 cd interface
@@ -13,7 +13,7 @@ GRIDWARE_UI_DIR=/absolute/path/to/shared-ui-components npm run build
 npm start
 ```
 
-Open http://127.0.0.1:4180. On macOS, **Open Index.command** starts or reopens the browser after the first build. The server reads knowledge folders beside this README; a fresh clone starts empty.
+Open http://127.0.0.1:4180. On macOS, **Open Gridex.command** starts or reopens the browser after the first build. The server reads knowledge folders beside this README; a fresh clone starts empty.
 
 Create `documents/`, `inbox/`, `sources/`, `topics/`, and `meetings/` as needed. Notes use Markdown and optional YAML metadata; reusable formats live in `templates/`. `AGENTS.md` describes the knowledge workflow. Ingestion and connected-source research run through the project chat; the app does not automatically connect to Slack or Confluence.
 

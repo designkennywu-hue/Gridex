@@ -25,7 +25,7 @@ if (!await healthy()) {
   const child = spawn(process.execPath, [path.join(here, 'server.mjs')], { cwd: here, detached: true, stdio: ['ignore', log, log], env: process.env });
   child.unref(); closeSync(log);
   for (let i = 0; i < 20 && !await healthy(); i++) await new Promise(r => setTimeout(r, 200));
-  if (!await healthy()) throw new Error('Could not start Index. Check interface/.server.log; port 4180 may be in use.');
+  if (!await healthy()) throw new Error('Could not start Gridex. Check interface/.server.log; port 4180 may be in use.');
 }
 spawn('open', [url], { stdio: 'ignore' }).unref();
-console.log(`Index is running at ${url}`);
+console.log(`Gridex is running at ${url}`);

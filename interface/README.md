@@ -1,10 +1,10 @@
-# Index interface
+# Gridex interface
 
-A local browser for the knowledge base in the parent folder. Open **Open Index.command** in the knowledge-base root, or visit [Index](http://127.0.0.1:4180) while it is running.
+A local browser for the knowledge base in the parent folder. Open **Open Gridex.command** in the knowledge-base root, or visit [Gridex](http://127.0.0.1:4180) while it is running.
 
 ## What it does
 
-- Built-in floating Record a meeting widget above Projects: system audio + microphone, live levels/timer, pause/resume and stop/save. Capture, encoding, transcription and summaries run inside the Index server; no separate Recorder service or window is required. Processing progress and retries appear in the recording reader. Recordings can be assigned to existing projects.
+- Built-in floating Record a meeting widget above Projects: system audio + microphone, live levels/timer, pause/resume and stop/save. Capture, encoding, transcription and summaries run inside the Gridex server; no separate Recorder service or window is required. Processing progress and retries appear in the recording reader. Recordings can be assigned to existing projects.
 
 - Includes a Slack insights collection of small project-linked updates. Other collects unassigned insights and project candidates. Refresh Slack through the project chat; the browser refresh button only reloads local files.
 - Reads real Markdown notes from `documents/`, `topics/`, and `meetings/`.
@@ -72,11 +72,13 @@ The recording engine is in `recorder/engine.cjs`, instantiated by `server.mjs`; 
 
 The original io.gridware.recorder service was unloaded and its launch configuration retained with a .disabled suffix. The new engine has its own helper, encoder and model paths, so the old Vibe Apps/Record folder is not required. Models are immutable hard links that survive deletion of the old filenames.
 
-Summaries use local Ollama, matching the prior configuration; the migrated engine does not use cloud API keys. Native audio permissions still apply to the node process. Recording continues if the browser closes; the active session reappears when Index is reopened. The Index server must remain running. Capture tests use generated PCM without accessing a real microphone.
+Summaries use local Ollama, matching the prior configuration; the migrated engine does not use cloud API keys. Native audio permissions still apply to the node process. Recording continues if the browser closes; the active session reappears when Gridex is reopened. The Gridex server must remain running. Capture tests use generated PCM without accessing a real microphone.
 
 ## Library and floating recorder
 
-Library collections are All (notes and recordings), Recordings, Slack, Confluence (synthesized imports), Saved, and Sources (preserved originals). Saved is separated from the source collections by a divider.
+Library collections are All (notes and recordings), Recordings, Slack, Confluence (synthesized imports), Linear, Agent work, Saved, and Sources (preserved originals). Saved is separated from the source collections by a divider.
+
+Agent work contains conversation insights and code-evidence documentation from `documents/agent-work/insights/` and `documents/agent-work/code/`. Confirmed project labels route them into project galleries; unassigned entries also appear in Other. Existing notes classified as `agent-insight` or `code-evidence` are included without moving their paths. External citations do not change their source collection. The workflow, evidence requirements and capture templates are linked from `integrations/agent-work/README.md`; collection setup does not ingest old chats or start background collection.
 
 Recorder is a non-modal floating panel: drag its header, minimize/expand it, and continue using collections/search underneath. Starting a session automatically minimizes to a live timer with pause/resume and stop/save controls. Active sessions recovered after a page reload appear minimized. Capture errors expand the panel. The project picker and readiness details are tucked under the save-destination disclosure. Position is remembered in this browser and kept inside the viewport. Closing an idle panel hides it; an active recording remains accessible in the mini bar and sidebar.
 
@@ -91,3 +93,27 @@ The recorder uses the trial prompt in `recorder/summary-style.cjs` for new summa
 Saved recordings show a shared Spinner with transcript/summary stages, real transcription progress when supplied, and automatic completion updates. Cards also display the current processing step. Pending transcript content uses a subtle placeholder; audio and navigation remain available. Stop/save shows Saving immediately while the local save finishes. Reading uses the formatted view directly, with no Read / Plain text switch.
 
 Cards show the date, source, title and project label without summary-preview paragraphs. Full summaries remain available in the reader and search.
+
+## Automatic recording titles
+
+After summarization, the local model suggests a short title from the transcript in the same request. Gridex replaces only the default timestamp title. Typed titles and later manual renames are preserved, including renames made while processing. Title changes affect metadata, not recording folder paths, audio or deep links. Existing default-titled recordings can receive a title by choosing Summarize again; custom names remain untouched.
+
+## Project gallery progress
+
+Projects initially open on an Overview tab. The browser remembers the selected tab for each project and the last project or library collection across reloads and reopening; removed milestones fall back to Overview. Projects without milestones retain their existing progress content there. Projects with milestones show a project-level TL;DR and a linked milestone timeline on Overview, without Next actions; milestone tabs retain their individual timelines, actions and briefs. Selecting a milestone in the overview timeline opens its tab. Other retains its existing collection view.
+
+Each project’s full gallery starts with its last-known phase, an evidence-linked timeline, and one next action. The section hides when an item opens, and returns on Back to notes. Other shows a classification next step; new projects without evidence show an explicit unknown phase.
+
+Local project data lives in `topics/project-progress.json` (version 1, `projects` keyed by project label slug). Each entry has `phase`, `asOf` (evidence-through date), `note`, `sources` (local note IDs), `steps` (`label`, optional `date`, `state`: recorded/current/planned, `sources`), and `nextAction` (`text`, `kind`: recorded/suggested, optional `owner`/`due`, `sources`). Update this synthesis when ingesting relevant evidence; it is not an automatic external-status feed. Evidence references must resolve to loaded notes carrying the same project label.
+
+The library refresh reloads the registry. Newer project notes trigger a review notice. Dates passing never advance a planned milestone or imply a missed commitment. Owners and due dates stay unset unless supported. The registry adds no gallery cards, preserves order/archive preferences, and remains excluded from Git. Malformed registries produce a preview warning while notes remain available.
+
+When a detail opens, the collection heading collapses to its title/count and a single Back arrow. Clicking the selected card again or pressing Escape (outside inputs and menus/dialogs) closes it. The arrow in the reader toolbar is removed. Cards lead with the larger title, followed by the date; the gallery has no bottom count/sync bar.
+
+Collection/project headers contain only title and count. Cards place their source label at bottom right and a 24px open arrow at top right; hover/keyboard focus fades the arrow in and shifts it gently upward/right, with reduced-motion support. The recording player and controls render inline in the reader without a surrounding card.
+
+Project progress sits in its own full-width section between the collection heading and filters, without a card border/background or rounded corners. It hides in detail mode and retains the main 24px section inset.
+
+## Gridex naming
+
+The product name and browser title are Gridex. `Open Gridex.command` is the main launcher. `Open Index.command` remains a compatibility launcher; the existing service ID, log filename and browser storage keys are retained so launching and saved preferences continue working.

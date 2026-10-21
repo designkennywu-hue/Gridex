@@ -88,7 +88,7 @@ export function RecorderWidget({projects,onSaved,onJobs,onOpen}: {projects:{valu
       if(polling || actionPending.current)return;polling=true;const version=actionVersion.current;
       try {
         const response=await fetch('/api/capture/status?since='+cursor.current);
-        if(!response.ok)throw new Error('The recording engine is unavailable. Reload Index or reopen Open Index.command.');
+        if(!response.ok)throw new Error('The recording engine is unavailable. Reload Gridex or reopen Open Gridex.command.');
         const data=await response.json();if(!alive || version!==actionVersion.current)return;
         cursor.current=data.next||0;
         setState(previous=>({...data,levels:data.state==='idle'?[]:[...previous.levels,...(data.levels||[])].slice(-48)}));
