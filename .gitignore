@@ -1,0 +1,13 @@
+# Track application code and reusable instructions only. Knowledge stays local.
+/*
+!/.gitignore
+!/README.md
+!/AGENTS.md
+!/agent.md
+!/Open Index.command
+!/templates/
+!/interface/
+.DS_Store
+.env
+.env.*
+*.log

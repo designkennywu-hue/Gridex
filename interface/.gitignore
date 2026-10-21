@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.log
+recorder/models/
+recorder/bin/
+.server.log
+
+# Screenshots can contain private knowledge.
+*.png
+*.jpg
+*.jpeg
+*.mp3
+*.wav
+.env
+.env.*
+.DS_Store
