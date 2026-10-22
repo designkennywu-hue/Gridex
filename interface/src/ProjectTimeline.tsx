@@ -5,8 +5,11 @@ import {Icon} from '@gridware/ui/icons/Icon';
 
 type BriefItem = {text:string;kind:string;sources:string[]};
 type NextAction = {text:string;kind:string;owner:string|null;due:string|null;sources:string[]};
-export type ProjectOverview = {milestones?:(ProjectOverview & {id:string;title:string})[];team?:{name:string;role:string;sources:string[]}[];nextActions?:NextAction[];assumptions?:BriefItem[];decisions?:BriefItem[];kpis?:BriefItem[];phase:string;asOf:string;note?:string;newerNotes:boolean;sources:string[];steps:{label:string;state:'recorded'|'current'|'planned';date:string|null;sources:string[]}[];nextAction:{text:string;kind:'recorded'|'suggested';owner:string|null;due:string|null;sources:string[]}|null};
+export type ProjectOverview = {emptySections?:'blank';milestones?:(ProjectOverview & {id:string;title:string})[];team?:{name:string;role:string;sources:string[]}[];nextActions?:NextAction[];assumptions?:BriefItem[];decisions?:BriefItem[];kpis?:BriefItem[];phase:string;asOf:string;note?:string;newerNotes:boolean;sources:string[];steps:{label:string;state:'recorded'|'current'|'planned';date:string|null;sources:string[]}[];nextAction:{text:string;kind:'recorded'|'suggested';owner:string|null;due:string|null;sources:string[]}|null};
 const date=(value:string)=>new Date(value+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+export function ProjectTeam({team=[],onOpen}:{team?:ProjectOverview['team'];onOpen:(id:string)=>void}) {
+  return <section className="project-team" aria-label="Project team"><h3>Team</h3><div>{team.length?team.map((member,i)=><button type="button" className="team-member" key={member.name} title={member.role} disabled={!member.sources[0]} onClick={()=>onOpen(member.sources[0])}><Chip color={['blue','purple','cyan','green','orange'][i%5]}>{member.name}</Chip></button>):<span>Not confirmed</span>}</div></section>;
+}
 export function ProjectTimeline({overview,other,onOpen,milestoneId,onSelectMilestone}: {milestoneId?:string;overview?:ProjectOverview;other:boolean;onOpen:(id:string)=>void;onSelectMilestone:(id:string)=>void}) {
   const rootOverview=overview;
   const selectedMilestone=overview?.milestones?.find(m=>m.id===milestoneId);
@@ -22,7 +25,7 @@ export function ProjectTimeline({overview,other,onOpen,milestoneId,onSelectMiles
     <div className="project-progress-top"><div className="project-progress-heading">
     <div className="project-overview-header"><h2>{selectedMilestone?.title.replace(/^\d+\s*·\s*/,'')||(milestoneOverview?`Milestones (${rootOverview!.milestones!.length})`:'Project progress')}</h2><Chip variant="secondary">{overview?.phase||(other?'Unassigned insights':'Phase not established')}</Chip></div>
     {overview?.newerNotes&&<p className="project-overview-update" role="status">Newer notes are available. This timeline and TL;DR need a fresh review.</p>}
-    </div><section className="project-team" aria-label="Project team"><h3>Team</h3><div>{overview?.team?.length?overview.team.map((member,i)=><Chip key={member.name} color={['blue','purple','cyan','green','orange'][i%5]} title={member.role} tabIndex={0} onClick={()=>onOpen(member.sources[0])}>{member.name}</Chip>):<span>Not confirmed</span>}</div></section></div>
+    </div></div>
 
     <div className="project-overview-body" role="tabpanel" aria-label={selectedMilestone?.title||'Overview'}>
       {milestoneOverview?<div className="project-timeline-wrap"><ol className="project-timeline project-milestone-timeline" aria-label="Project milestone timeline">{rootOverview!.milestones!.map((milestone,i)=><li key={milestone.id} className="timeline-planned">
@@ -45,7 +48,7 @@ export function ProjectTimeline({overview,other,onOpen,milestoneId,onSelectMiles
         ['Key assumptions',overview?.assumptions,'No assumptions documented in this project brief.'],
         ['Key decisions',overview?.decisions,'No confirmed decisions documented in this project brief.'],
         ['KPIs',overview?.kpis,'No KPI definitions, baselines or targets documented in this project brief.'],
-      ] as [string,BriefItem[]|undefined,string][]).map(([heading,items,empty])=><section key={heading}><h3>{heading}</h3>{items?.length?<ul>{items.map((item,i)=><li key={i}>{item.kind!=='recorded'&&<Chip variant="secondary" className="brief-qualifier">{item.kind==='proposed'?'Proposed':'To validate'}</Chip>}<p>{item.text}</p><button onClick={()=>onOpen(item.sources[0])}>View source</button></li>)}</ul>:<p>{empty}</p>}</section>)}</div>
+      ] as [string,BriefItem[]|undefined,string][]).map(([heading,items,empty])=><section key={heading}><h3>{heading}</h3>{items?.length?<ul>{items.map((item,i)=><li key={i}>{item.kind!=='recorded'&&<Chip variant="secondary" className="brief-qualifier">{item.kind==='proposed'?'Proposed':'To validate'}</Chip>}<p>{item.text}</p><button onClick={()=>onOpen(item.sources[0])}>View source</button></li>)}</ul>:overview?.emptySections==='blank'?null:<p>{empty}</p>}</section>)}</div>
     </div>
   </section>;
 }

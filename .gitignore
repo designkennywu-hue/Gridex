@@ -13,6 +13,12 @@
 !/integrations/agent-work/
 /integrations/agent-work/*
 !/integrations/agent-work/README.md
+!/integrations/github/
+/integrations/github/*
+!/integrations/github/README.md
+!/integrations/project-impact/
+/integrations/project-impact/*
+!/integrations/project-impact/README.md
 .DS_Store
 .env
 .env.*

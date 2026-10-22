@@ -3,3 +3,9 @@
 export function isAgentWork(note) {
   return note.category === 'notes' && (note.id.startsWith('documents/agent-work/') || ['agent-insight','code-evidence'].includes(note.kind));
 }
+export function isSlides(note) {
+  return note.category==='notes'&&(note.id.startsWith('documents/slides/')||note.kind==='slides');
+}
+export function isGitHub(note){
+  return note.category==='notes'&&(note.id.startsWith('documents/github/')||note.kind==='github-insight');
+}

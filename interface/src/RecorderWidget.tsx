@@ -1,6 +1,9 @@
 import React, {useEffect, useRef, useState} from 'react';
+import {MicrophoneIcon} from './MicrophoneIcon';
+import {RecordingWaveform} from './RecordingWaveform';
 import {Button} from '@gridware/ui/components/Button/Button';
 import {Input} from '@gridware/ui/components/Input/Input';
+import {Checkbox} from '@gridware/ui/components/Checkbox/Checkbox';
 import {Select} from '@gridware/ui/components/Select/Select';
 import {Icon} from '@gridware/ui/icons/Icon';
 import {Spinner} from '@gridware/ui/components/Spinner/Spinner';
@@ -31,14 +34,15 @@ export function RecordingProcessing({job,compact=false}: {job?:RecordingJob;comp
   if(!job)return null;
   const label=processingLabel(job);
   if(compact)return loading?<span className="recording-processing-inline"><Spinner size="2xs" aria-hidden="true"/><span>{label}</span></span>:null;
-  return <div className={'recording-processing '+(loading?'is-loading':'')} aria-busy={loading}>
-    <div className="recording-processing-heading" role="status" aria-live="polite">{loading&&<Spinner size="xs" aria-hidden="true"/>}<span>{label}</span></div>
-    {loading&&<>
-      <p>You can keep browsing. Your recording is saved, and this page updates automatically.</p>
-      <ol className="recording-processing-steps" aria-label="Recording processing steps">{[['Transcript',job.transcript.state],['Summary',job.summary.state]].map(([name,state])=><li key={name} className={state}><span aria-hidden="true">{state==='done'?<Icon name="check" size="sm"/>:state==='running'?<Spinner size="2xs" aria-hidden="true"/>:<span className="processing-step-dot"/>}</span><span>{name}</span><small>{state==='done'?'Ready':state==='running'?'In progress':state==='error'?'Failed':'Waiting'}</small></li>)}</ol>
-      {job.transcript.state==='running'&&Number.isFinite(job.transcript.progress)&&<progress className="transcription-progress" aria-label="Transcription progress" max={100} value={job.transcript.progress}/>}
-    </>}
-  </div>;
+  const failed=job.transcript.state==='error'||job.summary.state==='error';
+  const progress=job.transcript.state==='running'&&Number.isFinite(job.transcript.progress)?Math.max(0,Math.min(100,job.transcript.progress!)):null;
+  const heading=job.transcript.state==='running'?'Creating transcript':job.transcript.state==='queued'?'Waiting to transcribe':job.summary.state==='running'?'Writing summary':job.summary.state==='queued'?'Summary queued':label;
+  return <section className={'recording-processing '+(loading?'is-loading':'')+(failed?' has-error':'')} aria-label="Recording preparation" aria-busy={loading}>
+    <div className="recording-processing-heading"><span className="recording-processing-symbol" aria-hidden="true">{loading?<Spinner size="xs"/>:<Icon name={failed?'cross':'check'} size="md"/>}</span><div><strong role="status" aria-live="polite">{heading}</strong><p>{failed?'Your audio is saved. You can listen now or retry below.':loading?'Audio saved. Listen now or keep browsing while we prepare your notes.':'Your recording is saved.'}</p></div>{progress!==null&&<span className="recording-progress-value">{progress}%</span>}</div>
+    {progress!==null&&<progress className="transcription-progress" aria-label="Transcription progress" max={100} value={progress}/>}
+    <ol className="recording-processing-steps" aria-label="Recording processing steps">{[['Transcript',job.transcript.state],['Summary',job.summary.state]].map(([name,state],i)=><li key={name} className={state}><span className="processing-step-marker" aria-hidden="true">{state==='done'?<Icon name="check" size="sm"/>:i+1}</span><span>{name}</span><small>{state==='done'?'Ready':state==='running'?'Working':state==='error'?'Failed':state==='queued'?(i===0?'Queued':'Up next'):i===1&&job.transcript.state!=='error'?'Up next':'Not started'}</small></li>)}</ol>
+  </section>;
+
 }
 export function RecorderWidget({projects,onSaved,onJobs,onOpen}: {projects:{value:string;label:string}[];onSaved:(id:string)=>Promise<void>;onJobs:(jobs:RecordingJob[])=>void;onOpen:(id:string)=>void}) {
   const [mode,setMode]=useState<'hidden'|'expanded'|'mini'>('hidden');
@@ -74,7 +78,9 @@ export function RecorderWidget({projects,onSaved,onJobs,onOpen}: {projects:{valu
 
   const [state,setState]=useState({state:'idle',elapsed:0,error:'',levels:[] as number[],next:0});
   const [cap,setCap]=useState<any>(null);
+  const [zoomAuto,setZoomAuto]=useState<any>(null);
   const [error,setError]=useState('');
+  const [pollError,setPollError]=useState('');
   const [busy,setBusy]=useState(false);
   const [pendingAction,setPendingAction]=useState('');
   const [title,setTitle]=useState(()=>stored('index-recording-title'));
@@ -90,10 +96,10 @@ export function RecorderWidget({projects,onSaved,onJobs,onOpen}: {projects:{valu
         const response=await fetch('/api/capture/status?since='+cursor.current);
         if(!response.ok)throw new Error('The recording engine is unavailable. Reload Gridex or reopen Open Gridex.command.');
         const data=await response.json();if(!alive || version!==actionVersion.current)return;
-        cursor.current=data.next||0;
+        setPollError('');cursor.current=data.next||0;setZoomAuto(data.zoomAuto||null);
         setState(previous=>({...data,levels:data.state==='idle'?[]:[...previous.levels,...(data.levels||[])].slice(-48)}));
         if(count++%4===0){const r=await fetch('/api/capture/recordings');if(r.ok){const list=await r.json();if(alive){callbacks.current.onJobs(list);}}}
-      }catch(e){if(alive)setError((e as Error).message);}finally{polling=false;}
+      }catch(e){if(alive)setPollError((e as Error).message);}finally{polling=false;}
     }
     poll();const timer=setInterval(poll,800);
     return()=>{alive=false;clearInterval(timer);};
@@ -119,7 +125,7 @@ export function RecorderWidget({projects,onSaved,onJobs,onOpen}: {projects:{valu
   const pauseControl=state.state==='recording' || state.state==='paused' ? <Button variant="text" aria-label={state.state==='paused'?'Resume recording':'Pause recording'} title={state.state==='paused'?'Resume':'Pause'} disabled={busy} icon={<Icon name={state.state==='paused'?'play':'pause'} size="sm"/>} onClick={()=>action(state.state==='paused'?'resume':'pause')}/> : null;
   const stopControl=<Button className="floating-record-stop" variant="subtle" aria-label="Stop and save recording" title="Stop and save" disabled={busy||state.state==='starting'||state.state==='stopping'} loading={busy} icon={<span className="record-stop-square"/>} onClick={()=>action('stop')}/>;
   return <>
-    <button className={'record-widget-trigger '+(active?'is-recording':'')} onClick={()=>{setError('');setMode('expanded');}} aria-label={active?'Open active recording':'Record a meeting'}><Icon name="mic" size="sm"/><span>{saving?'Saving…':active?(state.state==='paused'?'Paused':'Recording'):'Record a meeting'}</span>{active&&<time>{stamp(state.elapsed)}</time>}</button>
+    <button className={'nav-item record-widget-trigger '+(active?'is-recording':'')} onClick={()=>{setError('');setMode('expanded');}} aria-label={active?'Open active recording':'Record a meeting'}><MicrophoneIcon/><span>{saving?'Saving…':active?(state.state==='paused'?'Paused':'Recording'):'Record a meeting'}</span>{active&&<time>{stamp(state.elapsed)}</time>}</button>
     {mode!=='hidden' && <section ref={panel} role={mode==='expanded'?'dialog':'region'} aria-modal={mode==='expanded'?false:undefined} aria-label={mode==='expanded'?'Recording controls':'Minimized recorder'} className={'floating-recorder '+(mode==='mini'?'is-mini ':'')+(dragging?'is-moving':'')} style={{left:position.x,top:position.y}}>
       <header className="floating-recorder-header" onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
         <div className="floating-recorder-status">{saving?<Spinner size="2xs" aria-hidden="true"/>:<span className={'record-status-dot '+(state.state==='recording'?'is-live':'')}/>}<span>{mode==='mini'?statusText:'Recorder'}</span></div>
@@ -132,11 +138,12 @@ export function RecorderWidget({projects,onSaved,onJobs,onOpen}: {projects:{valu
       </header>
       {mode==='expanded' && <div className="floating-recorder-body">
         <Input id="index-record-title" aria-label="Recording title" placeholder="New recording" maxLength={200} value={title} disabled={state.state==='stopping'} onChange={e=>setTitle(e.target.value)}/>
-        <div className="floating-recorder-wave" aria-hidden="true">{Array.from({length:48},(_,i)=><i key={i} style={{height:Math.max(2,(state.levels[i]||0)*64)+'px'}}/>)}</div>
+        <RecordingWaveform levels={state.levels} next={state.next} running={state.state==='recording'}/>
         <div className="floating-recorder-transport"><div><time>{stamp(state.elapsed)}</time><span role="status">{statusText}</span></div><div className="floating-recorder-actions">{active||recoverable ? <>{pauseControl}{stopControl}</> : <Button className="floating-record-start" aria-label="Start recording" title="Start recording" loading={busy} disabled={busy||!cap?.capture?.system} icon={<span className="record-start-dot"/>} onClick={()=>action('start')}/>}</div></div>
-        {(error||state.error) && <p role="alert" className="recording-error">{error||state.error}</p>}
+        {(error||pollError||state.error) && <p role="alert" className="recording-error">{error||pollError||state.error}</p>}
         <button className="floating-recorder-options" aria-expanded={optionsOpen} onClick={()=>setOptionsOpen(!optionsOpen)}><span>{selectedProject?.label||'Save to Recordings'}</span><Icon name={optionsOpen?'caret-up':'caret-down'} size="sm"/></button>
         {optionsOpen && <div className="floating-recorder-settings"><Select aria-label="Recording project" scale="md" value={selectedProject?project:''} onChange={setProject} options={[{value:'',label:'Recordings · assign later'},...projects]}/><p>{cap?.whisper?'Local transcription ready':'Checking transcription…'} · {cap?.summary?.available?'Local summaries ready':'Summary engine unavailable'}</p><p>System audio + microphone · Stays on your Mac</p></div>}
+        {zoomAuto&&<div className="zoom-auto-setting"><Checkbox scale="sm" checked={zoomAuto.enabled} label="Automatically record Zoom meetings" onChange={async(_,checked)=>{try{setZoomAuto(await captureRequest('zoom-auto',{enabled:checked}));}catch(e){setError((e as Error).message);}}}/>{['error','needs-attention'].includes(zoomAuto.phase)&&<p role="alert" className="recording-error">{zoomAuto.message}</p>}</div>}
       </div>}
     </section>}
   </>;

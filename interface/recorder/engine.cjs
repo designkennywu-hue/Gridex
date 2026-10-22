@@ -5,8 +5,9 @@ const fsp = fs.promises;
 const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
+const {randomUUID}=require('crypto');
 
-module.exports = function createRecorder({recordingsDir, withMutation = operation => operation(), assetsDir = __dirname}) {
+module.exports = function createRecorder({recordingsDir, withMutation = operation => operation(), assetsDir = __dirname, onTranscript = () => {}}) {
 const ROOT = assetsDir;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const MODELS_DIR = path.join(ROOT, 'models');
@@ -45,6 +46,7 @@ function startRecordSession() {
   const child = spawn(CAPTURE_BIN, [], { stdio: ['ignore', 'pipe', 'pipe'] });
   const s = {
     child,
+    sessionId:randomUUID(),
     encoder: new lame.Mp3Encoder(1, CAPTURE_RATE, 128),
     chunks: [],
     samples: 0,
@@ -422,6 +424,7 @@ async function processQueue() {
   try {
     await runWhisper(id, job);
     job.status = 'done';
+    Promise.resolve().then(()=>onTranscript(id)).catch(error=>console.error('Speaker detection could not start:',error.message));
     // chain: summarize automatically once the transcript exists
     if (!fs.existsSync(summaryPath(id))) {
       resolveSummaryBackend()
@@ -571,12 +574,12 @@ return {
     if (!recSession) return {state:'idle',elapsed:0,levels:[],next:0};
     const s = recSession;
     if (s.exited && !['stopping','error'].includes(s.state)) { s.state='error'; s.error='Audio capture ended unexpectedly. Save the captured audio before starting again.'; }
-    return {state:s.state,error:s.error,elapsed:s.samples / CAPTURE_RATE,levels:s.levels.slice(Math.max(0,since)).slice(-80),next:s.levels.length};
+    return {sessionId:s.sessionId,state:s.state,error:s.error,elapsed:s.samples / CAPTURE_RATE,levels:s.levels.slice(Math.max(0,since)).slice(-80),next:s.levels.length};
   },
   start() {
     if (!captureAvailable()) throw fail('Audio capture helper is unavailable.',503);
     if (recSession && !(recSession.state === 'error' && recSession.samples === 0 && recSession.exited)) throw fail('A recording is already open. Save it before starting another.',409);
-    recSession = startRecordSession(); return {state:'starting'};
+    recSession = startRecordSession(); return {state:'starting',sessionId:recSession.sessionId};
   },
   pause() { if (!recSession || recSession.exited || recSession.state === 'stopping') throw fail('No recording to pause.',409); recSession.paused=true; recSession.state='paused'; return {state:'paused'}; },
   resume() { if (!recSession || recSession.exited || recSession.state === 'stopping') throw fail('No recording to resume.',409); recSession.paused=false; recSession.state='recording'; return {state:'recording'}; },

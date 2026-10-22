@@ -5,12 +5,13 @@
   "scripts": {
     "build": "node build.mjs",
     "start": "node server.mjs",
-    "test": "node --test server.test.mjs"
+    "test": "node --test server.test.mjs map-navigation.test.mjs map-physics.test.mjs map-labels.test.mjs zoom-autorecord.test.mjs color-contrast.test.mjs"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",
     "@mui/material": "7.3.2",
+    "d3-force": "3.0.0",
     "esbuild": "0.25.9",
     "js-yaml": "4.1.0",
     "react": "18.3.1",

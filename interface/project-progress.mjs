@@ -40,7 +40,7 @@ export function buildProjectOverviews(raw, notes) {
       const validated=buildProjectOverviews({version:1,projects:{[id]:merged}},notes)[id];
       return validated ? [{id:m.id,title:m.title,...validated}] : [];
     }) : [];
-    output[id] = {milestones,team,assumptions:briefItems('assumptions'),decisions:briefItems('decisions'),kpis:briefItems('kpis'),phase, asOf, note:text(entry.note, 400), sources:evidence, steps, nextAction, nextActions, newerNotes};
+    output[id] = {emptySections:entry.emptySections==='blank'?'blank':undefined,milestones,team,assumptions:briefItems('assumptions'),decisions:briefItems('decisions'),kpis:briefItems('kpis'),phase, asOf, note:text(entry.note, 400), sources:evidence, steps, nextAction, nextActions, newerNotes};
   }
   return output;
 }

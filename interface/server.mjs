@@ -1,11 +1,17 @@
+import {buildKnowledgeGraph} from './knowledge-graph.mjs';
+import {paragraphLayout,formatTranscript} from './transcript-layout.mjs';
+import {speakerTranscript,detectSpeakers,renameSpeaker} from './speakers.mjs';
 import http from 'node:http';
 import path from 'node:path';
 import { promises as fs, createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import createRecorder from './recorder/engine.cjs';
+import {startZoomAutoRecorder} from './zoom-autorecord.mjs';
 import { readProjects, updateProjects } from './projects.mjs';
 import { buildProjectOverviews } from './project-progress.mjs';
+import {attachProjectReviews} from './project-reviews.mjs';
+import {attachReviewContext} from './review-context.mjs';
 import { mutateRecording, renameRecording, deleteRecording, restoreRecording, assignRecording } from './recordings.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -13,16 +19,27 @@ const defaultRoot = path.resolve(here, '..');
 const folders = new Set(['documents', 'topics', 'meetings', 'sources', 'inbox']);
 const rootFiles = new Set(['INDEX.md', 'LABELS.md', 'IMPORTS.md']);
 const extensions = new Set(['.md', '.txt', '.json', '.mp3']);
+const imageExtensions=new Set(['.png','.jpg','.jpeg','.webp']);
+function applyProjectAssignment(note,preferences){
+  if(Object.hasOwn(preferences.assignments||{},note.id)){
+    note.sourceLabels=[...note.labels];note.projectAssigned=true;
+    const project=preferences.assignments[note.id];
+    note.labels=note.labels.filter(label=>!label.startsWith('project:'));
+    for(const id of Array.isArray(project)?project:project?[project]:[])note.labels.push('project:'+id);
+  }
+  return note;
+}
+const projectIds=(notes,preferences)=>[...new Set([...preferences.order,...preferences.archived,...Object.keys(preferences.names||{}),...notes.flatMap(n=>[...n.labels,...(n.sourceLabels||[])].filter(l=>l.startsWith('project:')).map(l=>l.slice(8)))])];
 
 export async function safePath(root, input) {
   if (typeof input !== 'string' || input.includes('\0') || path.isAbsolute(input)) throw Object.assign(new Error('Invalid file path'), { status: 400 });
   const relative = path.normalize(input);
   if (!rootFiles.has(relative) && !folders.has(relative.split(path.sep)[0])) throw Object.assign(new Error('File is outside the knowledge base'), { status: 403 });
-  if (!extensions.has(path.extname(relative))) throw Object.assign(new Error('Unsupported file'), { status: 403 });
+  if (!extensions.has(path.extname(relative))&&!(relative.startsWith('sources'+path.sep)&&imageExtensions.has(path.extname(relative).toLowerCase()))) throw Object.assign(new Error('Unsupported file'), { status: 403 });
   const base = await fs.realpath(root);
   const resolved = await fs.realpath(path.resolve(base, relative));
   const actualRelative = path.relative(base, resolved);
-  if (!resolved.startsWith(base + path.sep) || (!rootFiles.has(actualRelative) && !folders.has(actualRelative.split(path.sep)[0])) || !extensions.has(path.extname(actualRelative))) throw Object.assign(new Error('File is outside the knowledge base'), { status: 403 });
+  if (!resolved.startsWith(base + path.sep) || (!rootFiles.has(actualRelative) && !folders.has(actualRelative.split(path.sep)[0])) || (!extensions.has(path.extname(actualRelative))&&!(actualRelative.startsWith('sources'+path.sep)&&imageExtensions.has(path.extname(actualRelative).toLowerCase())))) throw Object.assign(new Error('File is outside the knowledge base'), { status: 403 });
   const stat = await fs.stat(resolved);
   if (!stat.isFile()) throw Object.assign(new Error('Not a file'), { status: 400 });
   return { resolved, relative: path.relative(base, resolved), stat };
@@ -52,6 +69,7 @@ async function walk(root, dir) {
 
 export async function readNote(root, relative) {
   const file = await safePath(root, relative);
+  if(imageExtensions.has(path.extname(relative).toLowerCase()))throw Object.assign(new Error('Open the preserved image instead of a text note.'),{status:415});
   if (file.stat.size > 4 * 1024 * 1024) throw Object.assign(new Error('This file is too large to preview; use the original download.'), { status: 413 });
   const text = await fs.readFile(file.resolved, 'utf8');
   const { meta, body } = parse(text);
@@ -110,17 +128,25 @@ export async function getLibrary(root) {
     try { notes.push(await readNote(root, relative)); } catch (e) { warnings.push({ file: relative, error: e.message }); }
   }
   notes.sort((a, b) => b.updated.localeCompare(a.updated) || a.title.localeCompare(b.title));
-  let projectOverviews = {};
+  try {
+    const preferences=await readProjects(root);
+    for(const note of notes)applyProjectAssignment(note,preferences);
+  }catch(error){warnings.push({file:'.projects.json',error:'Project assignments could not be read'});}
+  let projectOverviews = {},rawProgress={};
   try {
     const file = await safePath(root, 'topics/project-progress.json');
-    projectOverviews = buildProjectOverviews(JSON.parse(await fs.readFile(file.resolved, 'utf8')), notes);
+    rawProgress=JSON.parse(await fs.readFile(file.resolved, 'utf8'));
+    projectOverviews = buildProjectOverviews(rawProgress, notes);
   } catch (error) { if(error.code !== 'ENOENT') warnings.push({file:'topics/project-progress.json',error:'Project progress could not be read'}); }
+  await attachProjectReviews(root,notes,rawProgress.projects||{},safePath,warnings);
+  await attachReviewContext(root,notes,rawProgress.projects||{},warnings);
   return { notes, warnings, projectOverviews, refreshedAt: new Date().toISOString() };
 }
 
-const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.md': 'text/plain; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.mp3': 'audio/mpeg', '.ttf': 'font/ttf', '.woff2': 'font/woff2' };
-export function createAppServer(root = defaultRoot, dist = path.join(here, 'dist'), recorder = createRecorder({recordingsDir:path.join(root,'inbox'), withMutation:operation => mutateRecording(root,operation)})) {
-  return http.createServer(async (req, res) => {
+const mime = { '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.webp':'image/webp', '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.md': 'text/plain; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.mp3': 'audio/mpeg', '.ttf': 'font/ttf', '.woff2': 'font/woff2' };
+export function createAppServer(root = defaultRoot, dist = path.join(here, 'dist'), recorder = createRecorder({recordingsDir:path.join(root,'inbox'), withMutation:operation => mutateRecording(root,operation), onTranscript:id=>Promise.all([detectSpeakers(root,'inbox/'+id+'/audio.mp3'),formatTranscript(root,'inbox/'+id+'/audio.mp3')])})) {
+  let zoomAuto=null;
+  const server=http.createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('Cache-Control', 'no-store');
@@ -129,17 +155,36 @@ export function createAppServer(root = defaultRoot, dist = path.join(here, 'dist
       if (!/^localhost(?::\d+)?$|^127\.0\.0\.1(?::\d+)?$/.test(req.headers.host || '')) return json(403, { error: 'Local access only' });
       if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) return json(403, { error: 'Cross-origin access denied' });
       const url = new URL(req.url, 'http://localhost');
+      if(url.pathname==='/api/knowledge-map'){
+        if(req.method!=='GET')return json(405,{error:'Read only'});
+        const library=await getLibrary(root),preferences=await readProjects(root);
+        let progress={},index='';try{progress=JSON.parse(await fs.readFile((await safePath(root,'topics/project-progress.json')).resolved,'utf8'));}catch{}
+        try{index=await fs.readFile((await safePath(root,'INDEX.md')).resolved,'utf8');}catch{}
+        return json(200,{...await buildKnowledgeGraph({notes:library.notes,preferences,progress,index,fileExists:async file=>{try{await safePath(root,file);return true;}catch{return false;}}}),warnings:library.warnings});
+      }
+      if(url.pathname==='/api/transcript'){
+        if(req.method==='GET'){const id=url.searchParams.get('id'),transcript=await speakerTranscript(root,id);return json(200,{...transcript,...(transcript.revision?await paragraphLayout(root,id):{})});}
+        if(req.method!=='POST')return json(405,{error:'Method not allowed'});
+        if(req.headers.origin!==`http://${req.headers.host}`||req.headers['x-second-brain']!=='recordings'||!req.headers['content-type']?.startsWith('application/json'))return json(403,{error:'Speaker changes must come from Gridex.'});
+        let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>16384)return json(413,{error:'Request is too large.'});}
+        let input;try{input=JSON.parse(body);}catch{return json(400,{error:'Invalid request.'});}
+        if(input.action==='format')return json(200,await formatTranscript(root,input.id));
+        if(input.action==='detect')return json(200,await detectSpeakers(root,input.id));
+        if(input.action==='rename')return json(200,await renameSpeaker(root,input));
+        return json(400,{error:'Choose a supported speaker action.'});
+      }
       if (url.pathname.startsWith('/api/capture/')) {
         const action = url.pathname.slice('/api/capture/'.length);
         if (req.method === 'GET' && action === 'capabilities') return json(200, await recorder.capabilities());
-        if (req.method === 'GET' && action === 'status') return json(200, recorder.status(Math.max(0, Number(url.searchParams.get('since')) || 0)));
+        if (req.method === 'GET' && action === 'status') return json(200, {...recorder.status(Math.max(0, Number(url.searchParams.get('since')) || 0)),zoomAuto:zoomAuto?.status()});
         if (req.method === 'GET' && action === 'recordings') return json(200, await recorder.list());
-        if (req.method !== 'POST' || !['start','pause','resume','stop','transcribe','summarize'].includes(action)) return json(405,{error:'Unsupported recording action.'});
+        if (req.method !== 'POST' || !['start','pause','resume','stop','transcribe','summarize','zoom-auto'].includes(action)) return json(405,{error:'Unsupported recording action.'});
         if (req.headers.origin !== `http://${req.headers.host}` || req.headers['x-second-brain'] !== 'capture' || !req.headers['content-type']?.startsWith('application/json')) return json(403,{error:'Recording controls must come from Gridex.'});
         let body = '';
         for await (const chunk of req) { body += chunk; if (Buffer.byteLength(body) > 16384) return json(413,{error:'Request too large.'}); }
         let input; try { input = JSON.parse(body); } catch { return json(400,{error:'Invalid request.'}); }
         if (!input || typeof input !== 'object' || Array.isArray(input)) return json(400,{error:'Invalid request.'});
+        if(action==='zoom-auto'){if(!zoomAuto)return json(503,{error:'Zoom detection is not available in this server.'});return json(200,await zoomAuto.configure(input.enabled));}
         if (action === 'stop') {
           if (typeof input.title !== 'string' || input.title.length > 200 || /[\x00-\x1f]/.test(input.title)) return json(400,{error:'Enter a recording title up to 200 characters.'});
           if (input.project) {
@@ -164,8 +209,10 @@ export function createAppServer(root = defaultRoot, dist = path.join(here, 'dist
         let body = '';
         for await (const chunk of req) { body += chunk; if (Buffer.byteLength(body) > 65536) return json(413, { error: 'Request is too large.' }); }
         let input; try { input = JSON.parse(body); } catch { return json(400, { error: 'Invalid request.' }); }
-        const allowed = [...new Set((await getLibrary(root)).notes.flatMap(n => n.labels.filter(l => l.startsWith('project:')).map(l => l.slice(8))))];
-        return json(200, await updateProjects(root, input, allowed));
+        const library=await getLibrary(root);
+        const preferences=await readProjects(root);
+        const allowed = projectIds(library.notes,preferences);
+        return json(200, await updateProjects(root, input, allowed, library.notes.map(n=>n.id)));
       }
       if (['PATCH', 'DELETE', 'POST'].includes(req.method) && ['/api/recordings', '/api/recordings/restore'].includes(url.pathname)) {
         if (req.headers.origin !== `http://${req.headers.host}` || req.headers['x-second-brain'] !== 'recordings' || !req.headers['content-type']?.startsWith('application/json')) return json(403, { error: 'Recording changes must come from this interface.' });
@@ -176,7 +223,7 @@ export function createAppServer(root = defaultRoot, dist = path.join(here, 'dist
           if (url.pathname === '/api/recordings/restore' && req.method === 'POST') return restoreRecording(root, input?.token);
           if (url.pathname === '/api/recordings' && req.method === 'PATCH') {
             if (input && Object.hasOwn(input,'project')) {
-              if (input.project !== null && input.project !== '' && (typeof input.project !== 'string' || !(await getLibrary(root)).notes.some(n => n.labels.includes('project:' + input.project)))) throw Object.assign(new Error('Choose an existing project.'),{status:400});
+              if (input.project !== null && input.project !== '' && (typeof input.project !== 'string' || !projectIds((await getLibrary(root)).notes,await readProjects(root)).includes(input.project))) throw Object.assign(new Error('Choose an existing project.'),{status:400});
               return assignRecording(root,input.id,input.project);
             }
             return renameRecording(root, input?.id, input?.title);
@@ -196,7 +243,8 @@ export function createAppServer(root = defaultRoot, dist = path.join(here, 'dist
           const note = (await getLibrary(root)).notes.find(n => n.id === requested && n.audio);
           return note ? json(200, note) : json(404, { error: 'Recording not found' });
         }
-        return json(200, await readNote(root, requested));
+        const note=applyProjectAssignment(await readNote(root,requested),await readProjects(root));
+        return json(200,(await getLibrary(root)).notes.find(n=>n.id===requested)||note);
       }
       let resolved, stat;
       if (url.pathname === '/api/raw') {
@@ -207,7 +255,7 @@ export function createAppServer(root = defaultRoot, dist = path.join(here, 'dist
         resolved = path.join(dist, filename);
         stat = await fs.stat(resolved);
       }
-      const headers = { 'Content-Type': mime[path.extname(resolved)] || 'application/octet-stream', 'Accept-Ranges': 'bytes' };
+      const headers = { 'Content-Type': mime[path.extname(resolved).toLowerCase()] || 'application/octet-stream', 'Accept-Ranges': 'bytes' };
       let start = 0, end = stat.size - 1, code = 200;
       if (req.headers.range) {
         const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range);
@@ -223,10 +271,13 @@ export function createAppServer(root = defaultRoot, dist = path.join(here, 'dist
       const stream = createReadStream(resolved, { start, end }); stream.on('error', () => res.destroy()); stream.pipe(res);
     } catch (e) { if (!res.headersSent) json(e.status || (e.code === 'ENOENT' ? 404 : 500), { error: e.message || 'Could not read file' }); }
   });
+  server.enableZoomAuto=async()=>{zoomAuto=await startZoomAutoRecorder({recorder,root,helper:path.join(here,'recorder/bin/zoom-status')});};
+  server.on('close',()=>zoomAuto?.close());
+  return server;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const server = createAppServer();
   const port = Number(process.env.PORT || 4180);
-  server.listen(port, '127.0.0.1', () => console.log(`Gridex: http://127.0.0.1:${port}`));
+  server.listen(port, '127.0.0.1', async () => {console.log(`Gridex: http://127.0.0.1:${port}`);await server.enableZoomAuto();});
 }

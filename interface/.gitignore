@@ -14,3 +14,4 @@ recorder/bin/
 .env
 .env.*
 .DS_Store
+recorder/.speaker-runtime/

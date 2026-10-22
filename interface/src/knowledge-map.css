@@ -1,0 +1,84 @@
+.knowledge-map-nav { margin:0 0 20px; }
+.knowledge-map { display:flex; flex-direction:column; height:calc(100dvh - 84px); min-height:0; }
+.map-header { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:28px 28px 22px; border-bottom:1px solid var(--border-default); }
+.map-eyebrow { display:block; font-size:10px; font-weight:600; letter-spacing:1.5px; color:var(--text-subtlest); text-transform:uppercase; }
+.map-header h1 { display:flex; align-items:center; gap:12px; font-size:26px; font-weight:500; letter-spacing:-.8px; margin:8px 0; }
+.map-header p { color:var(--text-subtle); margin:0; font-size:13px; }
+.map-view-switch { display:flex; padding:3px; border:1px solid var(--border-default); border-radius:9px; }
+.map-filters { position:relative; z-index:5; display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:14px 28px; border-bottom:1px solid var(--border-default); }
+.map-filters .select { width:max-content; min-width:140px; }
+.map-body { display:flex; flex:1; min-height:0; }
+.map-stage { flex:1; min-height:0; min-width:0; position:relative; overflow:hidden; background:radial-gradient(circle at 50% 48%,color-mix(in srgb,var(--text-info) 4%,transparent),transparent 68%),var(--surface-page); display:flex; flex-direction:column; }
+.map-swatch { display:inline-block; width:7px; height:7px; flex:0 0 7px; border-radius:50%; background:var(--text-subtlest); }
+.map-canvas { display:block; width:100%; flex:1; height:100%; min-height:0; touch-action:none; overscroll-behavior:contain; cursor:grab; }
+.map-canvas:active { cursor:grabbing; }
+.map-edge { stroke:var(--border-strong); stroke-width:.8; opacity:.45; pointer-events:none; }
+.map-edge.is-connected { stroke:var(--text-info); stroke-width:1.5; opacity:.4; }
+.map-node { cursor:pointer; outline:none; }
+.map-node > .map-node-dot { stroke:var(--surface-page); stroke-width:1; }
+.map-node > .map-node-selection { stroke:none; }
+.map-node.is-selected > .map-node-selection,.map-node:focus-visible > .map-node-selection { stroke:var(--text-default); stroke-width:1.5; opacity:.8; }
+.map-labels { pointer-events:none; }
+.map-label { fill:var(--text-subtle); font-weight:350; stroke:var(--surface-page); stroke-linejoin:round; paint-order:stroke fill; pointer-events:none; transition:opacity 120ms ease; }
+.map-label.is-project { font-weight:500; fill:var(--text-default); }
+.map-label.is-active { fill:var(--text-default); }
+.map-canvas .map-node.is-dimmed { opacity:.22; }
+.map-canvas .map-edge.is-dimmed { opacity:.10; }
+.map-edge,.map-node { transition:opacity 120ms ease; }
+@media(prefers-reduced-motion:reduce) { .map-edge,.map-node,.map-label { transition:none; } }
+.map-empty,.map-error { padding:60px 24px; text-align:center; margin:auto; color:var(--text-subtle); }
+.map-empty h2 { font-size:18px; color:var(--text-default); font-weight:500; }
+.map-connection-list { flex:1; min-height:0; overflow:auto; padding:8px 20px; }
+.map-connection-list > button { display:flex; gap:12px; align-items:center; width:100%; border:0; border-bottom:1px solid var(--border-default); background:none; color:var(--text-default); text-align:left; padding:12px 4px; font:inherit; cursor:pointer; }
+.map-connection-list strong { display:block; font-weight:500; font-size:12px; }
+.map-connection-list small { display:block; color:var(--text-subtlest); margin-top:4px; font-size:10px; }
+.map-connection-list > button > span:last-child { margin-left:auto; font-size:10px; white-space:nowrap; color:var(--text-subtle); }
+.map-connection-list > button:hover,.map-connection-list > button.is-selected { background:var(--action-ghost-hover); }
+@media(max-width:1050px) { .map-filters { padding:12px 20px; }.map-header { padding:24px 20px; } }
+@media(max-width:760px) { .map-header { align-items:flex-start; flex-direction:column; gap:14px; }.map-filters .select { min-width:120px; }.map-header h1 { font-size:24px; } }
+
+.map-canvas:focus-visible { outline:2px solid var(--border-strong); outline-offset:-2px; }
+/* Panning keeps shortcut focus without drawing a keyboard focus ring. */
+.map-canvas[data-pointer-focus="true"]:focus { outline:none; }
+.map-controls-disclosure { position:relative; color:var(--text-subtle); font-size:13px; }
+.map-controls-disclosure > summary { display:flex; align-items:center; gap:8px; cursor:pointer; list-style:none; padding:8px 12px; border-radius:6px; white-space:nowrap; }
+.map-controls-disclosure > summary::-webkit-details-marker { display:none; }
+.map-controls-disclosure > summary::after { content:'⌄'; color:var(--text-subtlest); }
+.map-controls-disclosure > summary:hover,.map-controls-disclosure[open] > summary { background:var(--action-ghost-hover); color:var(--text-default); }
+.map-controls-disclosure > summary:focus-visible { outline:2px solid var(--border-strong); }
+.map-options-count { font-size:11px; color:var(--text-subtlest); }
+.map-controls-panel { position:absolute; top:calc(100% + 12px); left:0; width:440px; max-width:calc(100vw - 48px); max-height:min(70vh,650px); overflow:auto; background:var(--surface-sunken); color:var(--text-default); border:1px solid var(--border-default); border-radius:10px; padding:20px; box-shadow:0 12px 36px #0004; }
+.map-controls-panel fieldset { border:0; margin:0 0 20px; padding:0; min-width:0; }
+.map-controls-panel legend { font-size:12px; font-weight:500; margin-bottom:12px; }
+.map-controls-fields { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.map-control-label { display:flex; flex-direction:column; gap:6px; font-size:11px; color:var(--text-subtle); min-width:0; }
+.map-controls-panel .select { width:100%; min-width:0; }
+.map-entity-choices { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.map-checkbox-label { display:inline-flex; align-items:center; gap:8px; }
+.map-controls-visibility .checkbox-field { display:flex; }
+.map-controls-visibility .checkbox-field + .checkbox-field { margin-top:12px; }
+.map-controls-method { font-size:11px; color:var(--text-subtle); border-top:1px solid var(--border-default); padding-top:12px; }
+.map-controls-method summary { cursor:pointer; }
+.map-controls-method p { line-height:1.6; margin-bottom:0; }
+@media(max-width:760px) { .map-controls-panel { position:fixed; top:220px; left:20px; right:20px; width:auto; max-width:none; max-height:calc(100dvh - 250px); } }
+
+.map-navigation-help { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.map-floating-controls { position:absolute; right:20px; bottom:20px; z-index:2; display:flex; flex-direction:column; gap:4px; }
+.map-floating-controls .button { box-shadow:0 2px 8px #0003; }
+.map-floating-legend { position:absolute; left:24px; top:24px; z-index:1; display:flex; flex-direction:column; gap:4px; align-items:flex-start; max-width:calc(100% - 100px); max-height:calc(100% - 48px); overflow:auto; color:var(--text-subtle); font-size:12px; line-height:18px; }
+.map-floating-legend .map-legend-filter { justify-content:flex-start; gap:8px; font-size:12px; font-weight:400; }
+.map-floating-legend .map-legend-filter.is-hidden { opacity:.4; }
+.map-floating-legend .map-legend-filter:hover,.map-floating-legend .map-legend-filter:focus-visible { opacity:1; }
+.map-floating-legend i { display:block; width:8px; height:8px; flex:0 0 8px; border-radius:50%; }
+
+.knowledge-map--embedded { height:65dvh; min-height:440px; flex:none; border-top:1px solid var(--border-default); }
+
+.map-person-avatar { pointer-events:none; overflow:visible; }
+
+.map-layer-control { position:absolute; top:24px; right:24px; z-index:3; }
+.map-layer-control .select { width:max-content; min-width:185px; background:var(--surface-sunken); box-shadow:0 2px 8px #0002; }
+.map-legend-heading { padding:0 10px 6px; font-size:10px; color:var(--text-subtlest); letter-spacing:1px; text-transform:uppercase; }
+.map-layer-key { display:flex; align-items:center; gap:8px; padding:6px 10px; max-width:240px; }
+.map-layer-key small { margin-left:8px; color:var(--text-subtlest); font-size:10px; font-variant-numeric:tabular-nums; }
+.map-layer-note { max-width:210px; padding:4px 10px; margin:4px 0 0; font-size:10px; line-height:1.6; color:var(--text-subtlest); }
+@media(max-width:760px) { .map-layer-control { top:14px; right:14px; }.map-floating-legend { top:68px; max-height:calc(100% - 90px); } }
